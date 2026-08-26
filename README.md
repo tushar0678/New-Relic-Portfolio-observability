@@ -408,4 +408,4 @@ Stop and review the plan before applying. A name/address change in Terraform can
 
 ## Tech used
 
-Terraform, New Relic Synthetics, NRQL, JavaScript/Selenium, Azure DevOps, GitHub Actions and Azure.
+Terraform, New Relic Synthetics, NRQL, JavaScript/Selenium, Azure DevOps.
