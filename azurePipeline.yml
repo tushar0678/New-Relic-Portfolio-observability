@@ -1,0 +1,123 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  - name: terraformWorkingDir
+    value: "$(Build.SourcesDirectory)/terraform"
+  - name: tfPlanFile
+    value: "portfolio-observability.tfplan"
+  - name: newRelicRegion
+    value: "US"
+
+stages:
+- stage: Validate
+  displayName: "Terraform Validate & FMT"
+  jobs:
+    - job: ValidateJob
+      displayName: "Validate Terraform"
+      steps:
+        - checkout: self
+
+        - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+          displayName: "Install Terraform"
+          inputs:
+            terraformVersion: "latest"
+
+        - script: terraform fmt -check -recursive
+          workingDirectory: "$(terraformWorkingDir)"
+          displayName: "TF Format Check"
+
+        - script: terraform init -backend=false
+          workingDirectory: "$(terraformWorkingDir)"
+          displayName: "TF Init"
+
+        - script: terraform validate
+          workingDirectory: "$(terraformWorkingDir)"
+          displayName: "TF Validate"
+
+- stage: Plan
+  displayName: "Terraform Plan"
+  dependsOn: Validate
+  condition: succeeded()
+  jobs:
+    - job: PlanJob
+      displayName: "Create Terraform Plan"
+      steps:
+        - checkout: self
+
+        - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+          displayName: "Install Terraform"
+          inputs:
+            terraformVersion: "latest"
+
+        - script: terraform init -backend=false
+          workingDirectory: "$(terraformWorkingDir)"
+          displayName: "TF Init"
+
+        - script: terraform plan -out="$(tfPlanFile)"
+          workingDirectory: "$(terraformWorkingDir)"
+          displayName: "TF Plan"
+          env:
+            TF_VAR_newrelic_api_key: $(NEWRELIC-API-KEY)
+            TF_VAR_newrelic_account_id: $(NEWRELIC-ACCOUNT-ID)
+            TF_VAR_newrelic_region: $(newRelicRegion)
+            TF_VAR_notification_email: $(NOTIFICATION-EMAIL)
+
+        - publish: "$(terraformWorkingDir)/$(tfPlanFile)"
+          artifact: tfplan
+          displayName: "Publish Terraform Plan"
+
+- stage: Apply
+  displayName: "Terraform Apply"
+  dependsOn: Plan
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+    - deployment: ApplyJob
+      displayName: "Apply Terraform"
+      environment: "portfolio-observability-prod"
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: self
+
+              - download: current
+                artifact: tfplan
+                displayName: "Download Terraform Plan"
+
+              - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+                displayName: "Install Terraform"
+                inputs:
+                  terraformVersion: "latest"
+
+              - script: terraform init
+                workingDirectory: "$(terraformWorkingDir)"
+                displayName: "TF Init"
+                env:
+                  ARM_USE_AZUREAD: "true"
+
+              - task: AzureCLI@2
+                displayName: "TF Apply"
+                inputs:
+                  azureSubscription: "$(AZURE-SERVICE-CONNECTION)"
+                  scriptType: "bash"
+                  scriptLocation: "inlineScript"
+                  inlineScript: |
+                    set -euo pipefail
+                    cd "$(terraformWorkingDir)"
+                    terraform apply -input=false "$(Pipeline.Workspace)/tfplan/$(tfPlanFile)"
+                env:
+                  TF_VAR_newrelic_api_key: $(NEWRELIC-API-KEY)
+                  TF_VAR_newrelic_account_id: $(NEWRELIC-ACCOUNT-ID)
+                  TF_VAR_newrelic_region: $(newRelicRegion)
+                  TF_VAR_notification_email: $(NOTIFICATION-EMAIL)
