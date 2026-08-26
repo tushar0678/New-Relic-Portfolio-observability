@@ -3,9 +3,9 @@ resource "newrelic_alert_policy" "portfolio_policy" {
   incident_preference = "PER_CONDITION"
 }
 
-resource "newrelic_nrql_alert_condition" "browser_failed" {
+resource "newrelic_nrql_alert_condition" "homepage_browser_failed" {
   policy_id = newrelic_alert_policy.portfolio_policy.id
-  name      = "${local.homepage_monitor} Failed"
+  name      = local.browser_alert_name
   type      = "static"
   enabled   = true
 
@@ -27,14 +27,14 @@ resource "newrelic_nrql_alert_condition" "browser_failed" {
   close_violations_on_expiration = true
 }
 
-resource "newrelic_nrql_alert_condition" "ping_failed" {
+resource "newrelic_nrql_alert_condition" "website_availability_failed" {
   policy_id = newrelic_alert_policy.portfolio_policy.id
-  name      = "${local.ping_monitor} Failed"
+  name      = local.availability_alert
   type      = "static"
   enabled   = true
 
   nrql {
-    query = "SELECT count(*) FROM SyntheticCheck WHERE monitorName = '${local.ping_monitor}' AND result != 'SUCCESS'"
+    query = "SELECT count(*) FROM SyntheticCheck WHERE monitorName = '${local.availability_monitor}' AND result != 'SUCCESS'"
   }
 
   warning {
