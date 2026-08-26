@@ -1,53 +1,35 @@
 # Tushar Shukla Portfolio Observability
 
-Production-style **New Relic Synthetic + Terraform observability** project for monitoring [Tushar Shukla's portfolio](https://tushar0678.github.io/).
+This is a small New Relic + Terraform project I use to monitor my personal portfolio: [https://tushar0678.github.io/](https://tushar0678.github.io/).
 
-## Architecture
+The main idea is simple: check that the site is up, make sure the important page elements are present, catch broken images and obvious error pages, and send enough information to New Relic to understand what actually failed.
 
-```text
-GitHub / Azure DevOps
-        |
-        v
-  Terraform Validate
-        |
-        v
-  Terraform Plan
-        |
-   Plan Artifact
-        |
-        v
-  PROD Environment
-        |
-        v
-  Terraform Apply
-        |
-        v
- New Relic Synthetics
-        |
-        v
- Alerts -> Workflow -> NRQL Enrichment -> Email
-```
+## What this project checks
 
-## What is monitored
+The browser synthetic monitor currently checks:
 
-- Homepage availability
+- Portfolio homepage availability
 - Page title
 - H1/H2 headings
-- Broken images
-- Internal navigation links
-- Error-page/error-message patterns
-- Duplicate-page prevention during crawling
-- New Relic custom attributes:
-  - `ErrorMessage`
-  - `ErrorType`
-  - `PageType`
-  - `Section`
-  - `Url`
-- Synthetic failure alerts
-- NRQL workflow enrichment
-- Optional email notifications
+- A small number of visible images
+- Internal links on the portfolio domain
+- Common error-page/error-message text
+- Duplicate URLs while crawling
+- The exact URL where a validation error occurred
 
-## Project structure
+The script also sends these custom attributes to New Relic when the run fails:
+
+```text
+ErrorMessage
+ErrorType
+PageType
+Section
+Url
+```
+
+That makes the alert more useful than a generic "synthetic failed" message.
+
+## Repository layout
 
 ```text
 .
@@ -68,17 +50,16 @@ GitHub / Azure DevOps
 └── README.md
 ```
 
-## Prerequisites
+## What you need
 
-Install:
+Before deploying, make sure you have:
 
-- Terraform
-- Azure CLI if using the Azure DevOps deployment flow
+- A New Relic account
+- A New Relic API key with access to create/manage the required resources
+- Terraform installed locally, if you want to run it from your machine
 - Git
-- Access to a New Relic account
-- New Relic User API key with permission to manage the required observability resources
-- Azure DevOps project with permission to create/run pipelines
-- Azure service connection if an AzureRM Terraform backend is configured
+- An Azure DevOps project if you want to use the deployment pipeline
+- An Azure DevOps service connection if your Terraform backend needs Azure authentication
 
 ## 1. Clone the repository
 
@@ -87,11 +68,34 @@ git clone https://github.com/tushar0678/New-Relic-Portfolio-observability.git
 cd New-Relic-Portfolio-observability
 ```
 
-## 2. Configure New Relic credentials
+## 2. Check the portfolio URL
 
-Do **not** commit credentials to Git.
+The target URL is defined in:
 
-For local Terraform execution:
+```text
+terraform/locals.tf
+```
+
+Current value:
+
+```text
+https://tushar0678.github.io/
+```
+
+The monitor names are also defined there. They are intentionally explicit so that they are easy to identify in New Relic:
+
+```text
+Tushar Shukla Portfolio - Homepage Browser
+Tushar Shukla Portfolio - Website Availability
+```
+
+If the portfolio URL changes, update `homepage_url` and keep the crawler restricted to the same host.
+
+## 3. Configure New Relic credentials
+
+Do not put the API key in Git.
+
+For a local deployment, set the Terraform variables in your shell. For example:
 
 ```bash
 export TF_VAR_newrelic_account_id="YOUR_NEW_RELIC_ACCOUNT_ID"
@@ -99,31 +103,9 @@ export TF_VAR_newrelic_api_key="YOUR_NEW_RELIC_API_KEY"
 export TF_VAR_notification_email="YOUR_EMAIL"
 ```
 
-If your Terraform variables use different names, keep the variable names consistent with `terraform/variables.tf`.
+Check `terraform/variables.tf` to see the variable names used by the project.
 
-## 3. Review the portfolio target
-
-The monitored portfolio URL is:
-
-```text
-https://tushar0678.github.io/
-```
-
-The primary monitor is named:
-
-```text
-Tushar Shukla Portfolio - Homepage Browser
-```
-
-The availability monitor is named:
-
-```text
-Tushar Shukla Portfolio - Website Availability
-```
-
-Update `terraform/locals.tf` if the portfolio URL or naming needs to change.
-
-## 4. Run Terraform locally
+## 4. Test Terraform locally
 
 ```bash
 cd terraform
@@ -133,83 +115,33 @@ terraform validate
 terraform plan
 ```
 
-Review the plan carefully before applying.
+I recommend reviewing the plan before applying anything.
 
-To deploy manually:
+For a manual deployment:
 
 ```bash
 terraform apply
 ```
 
-Confirm the resources Terraform proposes before entering `yes`.
+Confirm the resources shown by Terraform and approve the apply when you are happy with the plan.
 
-## 5. Azure DevOps deployment
+## 5. Azure DevOps pipeline
 
-The repository contains `azurePipeline.yml`, following the same deployment pattern as the uploaded reference project:
+The deployment pipeline is in:
 
-### Stage 1 — Validate
+```text
+azurePipeline.yml
+```
+
+It follows the same basic pattern as the reference project used for this demo:
+
+```text
+Validate -> Plan -> publish plan artifact -> Apply
+```
+
+### Validate
 
 Runs:
-
-```text
-Terraform fmt
-Terraform init
-Terraform validate
-```
-
-### Stage 2 — Plan
-
-Runs Terraform plan and publishes:
-
-```text
-portfolio-observability.tfplan
-```
-
-as the `tfplan` pipeline artifact.
-
-### Stage 3 — Apply
-
-Runs only for `main` and uses the Azure DevOps environment:
-
-```text
-portfolio-observability-prod
-```
-
-The deployment downloads the exact plan artifact generated by the Plan stage and applies that plan.
-
-Configure an approval/check on the `portfolio-observability-prod` environment if you want manual production approval before Terraform Apply.
-
-## 6. Azure DevOps variables
-
-Create the following secret/pipeline variables or variable-group entries:
-
-| Variable | Purpose |
-|---|---|
-| `NEWRELIC-API-KEY` | New Relic API key; secret |
-| `NEWRELIC-ACCOUNT-ID` | New Relic account ID |
-| `NOTIFICATION-EMAIL` | Optional alert email |
-| `AZURE-SERVICE-CONNECTION` | Azure DevOps service connection name |
-
-If Terraform uses an AzureRM remote backend, also configure the backend resource group, storage account, container and state key in your environment. Do not reuse the old GroupSite state key.
-
-## 7. Azure DevOps pipeline setup
-
-1. Open **Azure DevOps → Pipelines**.
-2. Create a new pipeline.
-3. Select the Git repository containing this project.
-4. Choose **Existing Azure Pipelines YAML file**.
-5. Select `/azurePipeline.yml`.
-6. Save and run the pipeline.
-7. Configure the `portfolio-observability-prod` environment.
-8. Add an approval/check if production approval is required.
-9. Add the secret variables listed above.
-10. Run the pipeline and review Validate → Plan → Apply.
-
-## 8. GitHub Actions validation
-
-`.github/workflows/terraform.yml` validates Terraform on pushes and pull requests.
-
-It runs:
 
 ```bash
 terraform fmt -check -recursive
@@ -217,70 +149,188 @@ terraform init -backend=false
 terraform validate
 ```
 
-GitHub Actions is intended for repository-level validation. Azure DevOps is the deployment pipeline for this demo.
+### Plan
 
-## 9. Updating the monitoring script
+Runs Terraform plan and creates:
 
-The browser monitor is:
+```text
+portfolio-observability.tfplan
+```
+
+That plan is published as the `tfplan` pipeline artifact.
+
+### Apply
+
+The Apply stage:
+
+- runs only for `main`
+- downloads the exact plan artifact produced by the Plan stage
+- deploys through the `portfolio-observability-prod` Azure DevOps environment
+- runs `terraform apply` against that saved plan
+
+This keeps the plan that was reviewed separate from a new plan being generated during Apply.
+
+For a production-like setup, add an approval/check to the `portfolio-observability-prod` environment.
+
+## 6. Azure DevOps variables
+
+The pipeline expects these values:
+
+| Variable | Used for |
+|---|---|
+| `NEWRELIC-API-KEY` | New Relic API key (secret) |
+| `NEWRELIC-ACCOUNT-ID` | New Relic account ID |
+| `NOTIFICATION-EMAIL` | Optional notification address |
+| `AZURE-SERVICE-CONNECTION` | Azure DevOps service connection |
+
+Keep the New Relic API key secret.
+
+If you add an AzureRM remote backend later, create a separate state location/key for this project. Do not point it at the old GroupSite state.
+
+## 7. Create the Azure DevOps pipeline
+
+In Azure DevOps:
+
+1. Open **Pipelines**.
+2. Select **New pipeline**.
+3. Select the repository.
+4. Choose **Existing Azure Pipelines YAML file**.
+5. Select `/azurePipeline.yml`.
+6. Save the pipeline.
+7. Add the variables listed above.
+8. Create/configure the `portfolio-observability-prod` environment.
+9. Add an approval/check when required.
+10. Run the pipeline.
+
+You should see:
+
+```text
+Validate
+  -> Plan
+      -> tfplan artifact
+          -> Apply
+```
+
+## 8. GitHub Actions
+
+There is also a lightweight GitHub Actions workflow at:
+
+```text
+.github/workflows/terraform.yml
+```
+
+It is only for repository validation. It runs on pushes and pull requests and checks:
+
+```bash
+terraform fmt -check -recursive
+terraform init -backend=false
+terraform validate
+```
+
+Azure DevOps is the deployment pipeline in this demo.
+
+## 9. How the browser monitor works
+
+The actual synthetic script is here:
 
 ```text
 terraform/scripts/portfolio_observability.js
 ```
 
-To add or change validation:
+The script starts from the portfolio homepage, discovers internal links, and visits a limited number of pages so the synthetic does not run forever.
 
-1. Update the JavaScript validation logic.
-2. Keep the target host restricted to `tushar0678.github.io`.
-3. Avoid revisiting URLs already processed.
-4. Keep failures associated with the exact failing URL.
-5. Preserve the custom attributes used by the NRQL enrichment.
-6. Run Terraform validation.
-7. Commit the change.
-8. Open a PR.
-9. Let GitHub Actions validate the Terraform.
-10. Merge to `main`.
-11. Azure DevOps runs Validate → Plan → Apply.
+It keeps a set of visited URLs so the same page is not checked twice.
 
-## 10. Updating Terraform monitors
+For each page it roughly does this:
 
-For monitor configuration changes, edit:
+```text
+Load page
+  -> Check for an obvious error page
+  -> Check title
+  -> Check H1/H2
+  -> Check a few visible images
+  -> Collect internal links
+  -> Continue to next unique page
+```
+
+When something fails, the script keeps the error tied to the actual page URL.
+
+## 10. Changing the monitor
+
+If you want to add another validation, edit:
+
+```text
+terraform/scripts/portfolio_observability.js
+```
+
+A normal change should look like this:
+
+```text
+Edit script
+   ↓
+Run terraform fmt
+   ↓
+Run terraform validate
+   ↓
+Commit + push
+   ↓
+Open PR
+   ↓
+GitHub Actions validation
+   ↓
+Merge to main
+   ↓
+Azure DevOps Validate
+   ↓
+Azure DevOps Plan
+   ↓
+Production approval (if configured)
+   ↓
+Azure DevOps Apply
+```
+
+## 11. Changing monitor names or URL
+
+Update:
 
 ```text
 terraform/locals.tf
-terraform/monitors.tf
 ```
 
-For alert changes, edit:
+This is the central place for the site name, monitor names and portfolio URL.
 
-```text
-terraform/alerts.tf
-```
-
-For workflows and NRQL enrichment, edit:
-
-```text
-terraform/workflow.tf
-```
-
-For notification configuration, edit:
-
-```text
-terraform/notification.tf
-```
-
-Then run:
+After changing it:
 
 ```bash
+cd terraform
 terraform fmt -recursive
 terraform validate
 terraform plan
 ```
 
-Do not commit generated `.tfplan` files or secrets.
+Review the planned resource changes carefully. Renaming a New Relic resource can result in Terraform replacing the resource depending on the provider behavior.
 
-## 11. How the alert enrichment works
+## 12. Changing alerts
 
-When the browser monitor fails, the workflow queries recent `SyntheticCheck` events and enriches the issue with:
+Alert conditions are in:
+
+```text
+terraform/alerts.tf
+```
+
+The current alerts cover browser failures and website availability failures.
+
+The conditions are based on the actual New Relic synthetic monitor names from `locals.tf`, so keep the names consistent when making changes.
+
+## 13. Changing the workflow and enrichment
+
+Workflow configuration is in:
+
+```text
+terraform/workflow.tf
+```
+
+The enrichment query adds:
 
 ```text
 ErrorMessage
@@ -290,66 +340,72 @@ Section
 Url
 ```
 
-This makes the notification identify the actual failing portfolio page rather than only saying that the synthetic monitor failed.
+from recent failed `SyntheticCheck` events for the portfolio browser monitor.
 
-## 12. Deployment flow for a normal change
+If you rename the browser monitor, make sure the workflow filter and NRQL query are still using the new name.
+
+## 14. Notifications
+
+Notification configuration is in:
 
 ```text
-1. Edit code
-      ↓
-2. terraform fmt
-      ↓
-3. terraform validate
-      ↓
-4. Commit + push / PR
-      ↓
-5. GitHub Actions validation
-      ↓
-6. Merge to main
-      ↓
-7. Azure DevOps Validate
-      ↓
-8. Azure DevOps Plan
-      ↓
-9. Plan artifact published
-      ↓
-10. Production approval/check
-      ↓
-11. Azure DevOps Apply exact plan
-      ↓
-12. New Relic resources updated
-      ↓
-13. Synthetic monitor executes
-      ↓
-14. Alert/workflow/enrichment if failure occurs
+terraform/notification.tf
 ```
 
-## 13. Troubleshooting
+Email notification is optional. You can leave it disabled for a demo environment and enable it later through the Terraform variables.
 
-### Terraform authentication fails
+## 15. Typical deployment from a code change
 
-Verify `NEWRELIC-API-KEY` and `NEWRELIC-ACCOUNT-ID` are configured as pipeline variables/secrets and are available to the Plan and Apply stages.
+For example, suppose you want to check another portfolio page:
 
-### Terraform state/backend fails
+1. Update the browser script or Terraform configuration.
+2. Run `terraform fmt -recursive`.
+3. Run `terraform validate`.
+4. Push the change and open a PR.
+5. GitHub Actions checks the Terraform.
+6. Merge the PR into `main`.
+7. Azure DevOps runs the Validate stage.
+8. The Plan stage creates `portfolio-observability.tfplan`.
+9. The plan is published as an artifact.
+10. The production environment approval/check runs, if configured.
+11. Apply downloads that same plan artifact and applies it.
+12. New Relic receives the updated monitor/alert configuration.
 
-Verify the Azure service connection and backend configuration. The demo should use a dedicated state key for the portfolio observability project.
+## 16. Troubleshooting
 
-### Synthetic monitor fails
+### Terraform init/plan fails
 
-Open the New Relic Synthetic monitor and inspect the failing URL and custom attributes. Confirm that the portfolio is reachable and that the expected title/headings exist.
+Check the New Relic account ID, API key and provider configuration first.
 
-### Alert does not contain the failing URL
+### Pipeline cannot find a variable
 
-Check that the browser script is publishing `custom.Url` and that the workflow NRQL enrichment filters the correct monitor name.
+Check the Azure DevOps pipeline variables/variable group and make sure the variable names match the YAML exactly.
 
-## Security notes
+### Synthetic monitor fails on the homepage
 
-- Never commit New Relic API keys, Azure credentials, webhook secrets or passwords.
-- Store secrets in Azure DevOps secret variables/variable groups or another approved secret manager.
-- Use a dedicated Terraform state location for this project.
-- Use an approval/check on the production environment before applying changes.
-- Keep the synthetic crawler restricted to the portfolio host.
+Open the monitor in New Relic and check the failure details. The script writes the failing URL into the custom `Url` attribute when an error is collected.
 
-## Technology
+### Alert is firing but enrichment is empty
 
-**Terraform · New Relic Synthetics · NRQL · JavaScript/Selenium · Azure DevOps · GitHub Actions · Azure**
+Check that:
+
+- the browser monitor actually failed
+- the custom attributes were set by the script
+- the workflow is filtering the current browser monitor name
+- the NRQL `SINCE` window still includes the failure
+
+### Terraform wants to destroy an existing monitor unexpectedly
+
+Stop and review the plan before applying. A name/address change in Terraform can make the provider see a different resource.
+
+## 17. Security
+
+- Never commit New Relic API keys.
+- Keep Azure service connection credentials in Azure DevOps.
+- Use secret variables/variable groups for sensitive values.
+- Keep a separate Terraform state for this project.
+- Keep the synthetic crawler restricted to `tushar0678.github.io`.
+
+## Tech used
+
+Terraform, New Relic Synthetics, NRQL, JavaScript/Selenium, Azure DevOps, GitHub Actions and Azure.
