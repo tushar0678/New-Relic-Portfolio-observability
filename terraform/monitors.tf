@@ -1,4 +1,4 @@
-resource "newrelic_synthetics_script_monitor" "portfolio_browser" {
+resource "newrelic_synthetics_script_monitor" "portfolio_homepage_browser" {
   name                 = local.homepage_monitor
   status               = "ENABLED"
   type                 = "SCRIPT_BROWSER"
@@ -11,8 +11,8 @@ resource "newrelic_synthetics_script_monitor" "portfolio_browser" {
   script = file("${path.module}/scripts/portfolio_observability.js")
 }
 
-resource "newrelic_synthetics_monitor" "portfolio_ping" {
-  name             = local.ping_monitor
+resource "newrelic_synthetics_monitor" "portfolio_website_availability" {
+  name             = local.availability_monitor
   type             = "SIMPLE"
   uri              = local.homepage_url
   locations_public = local.locations_public
