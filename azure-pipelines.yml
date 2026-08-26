@@ -1,0 +1,65 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TF_WORKING_DIR: terraform
+
+stages:
+  - stage: Validate
+    displayName: "Validate Tushar Portfolio Terraform"
+    jobs:
+      - job: TerraformValidate
+        displayName: "Terraform Format and Validate"
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: "latest"
+
+          - bash: |
+              terraform fmt -check -recursive
+            workingDirectory: $(TF_WORKING_DIR)
+            displayName: "Terraform Format Check"
+
+          - bash: |
+              terraform init -backend=false
+            workingDirectory: $(TF_WORKING_DIR)
+            displayName: "Terraform Init"
+
+          - bash: |
+              terraform validate
+            workingDirectory: $(TF_WORKING_DIR)
+            displayName: "Terraform Validate"
+
+  - stage: Plan
+    displayName: "Plan Tushar Portfolio Observability"
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - job: TerraformPlan
+        displayName: "Terraform Plan"
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: "latest"
+
+          - bash: |
+              terraform init -backend=false
+              terraform plan -out=tfplan
+            workingDirectory: $(TF_WORKING_DIR)
+            displayName: "Terraform Plan"
