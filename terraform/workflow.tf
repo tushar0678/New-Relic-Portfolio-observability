@@ -1,22 +1,22 @@
 resource "newrelic_workflow" "portfolio_workflow" {
   account_id            = var.newrelic_account_id
-  name                  = "${local.site} - Observability Workflow"
+  name                  = local.workflow_name
   muting_rules_handling = "DONT_NOTIFY_FULLY_MUTED_ISSUES"
 
   issues_filter {
-    name = "portfolio-browser-filter"
+    name = "tushar-portfolio-homepage-filter"
     type = "FILTER"
 
     predicate {
       attribute = "accumulations.conditionName"
       operator  = "EXACTLY_MATCHES"
-      values    = [newrelic_nrql_alert_condition.browser_failed.name]
+      values    = [newrelic_nrql_alert_condition.homepage_browser_failed.name]
     }
   }
 
   enrichments {
     nrql {
-      name = "Portfolio Enrichment"
+      name = local.enrichment_name
 
       configuration {
         query = <<-EOF
